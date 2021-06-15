@@ -1,0 +1,215 @@
+---
+title: "Exporter Processing"
+author: "Laura K Wiley and Stephanie Hicks"
+date: "7/21/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load libraries
+```{r load-libs}
+library(here)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(DT)
+```
+
+Create directories (if needed)
+```{r create-dirs}
+if(!dir.exists(here("data_raw"))){
+  dir.create(here("data_raw"))
+}
+if(!dir.exists(here("data_processed"))){
+  dir.create(here("data_processed"))
+}
+```
+
+```{r}
+# download GENCODE primary assembly fasta file
+if(!file.exists(here("data_raw", "nih_data.RDS"))){
+  
+  library(rvest)
+  url <- "https://exporter.nih.gov/ExPORTER_Catalog.aspx"
+  h <- read_html(url)
+  tmp <- h %>%
+    html_nodes("td:nth-child(5) div") %>% 
+    html_nodes("a") %>% 
+    html_attr("href")
+  zip_files <- paste0("https://exporter.nih.gov/", tmp)
+  rm(h,tmp, url)
+  
+  tmp <- read_csv(zip_files[1])
+  
+  download.file(zip_files[1], destfile = here("data_raw"))
+  csv_files <- list.files(here(), ".csv")
+```
+
+
+Things below this need to be edited.
+```{r}
+
+
+# files <- dir(recursive = T, pattern = ".csv")
+# reporter_data <- files %>% 
+#   map_dfr(read_csv, col_types = cols(.default = col_character()))
+# reporter_data %>% saveRDS("RePORTER_PRJ_FY_2015_2020.RDS")
+
+reporter_data <- readRDS(file = "RePORTER_PRJ_FY_2015_2020.RDS")
+
+write_csv(reporter_data, "nih.csv")
+```
+
+
+
+
+
+```{r}
+table(reporter_data$ACTIVITY)
+reporter_data %>% 
+  filter(ACTIVITY == "K99")
+```
+
+
+## Extract and Order all R01s by investigator
+
+```{r cars}
+r01_data <- reporter_data %>%
+  filter(APPLICATION_TYPE == 1,
+         !is.na(BUDGET_START),
+         !is.na(PI_NAMEs),
+         ACTIVITY == "R01") %>% 
+  mutate(contact_pi = case_when(str_detect(PI_IDS, "(contact)") == TRUE ~ str_extract(PI_IDS, "[0-9]+ \\(contact\\);"),
+                                TRUE ~ PI_IDS),
+         contact_pi = str_replace_all(contact_pi, "( \\(contact\\))?;", "")) %>%
+  mutate_at(.vars = vars(BUDGET_START:BUDGET_END, PROJECT_START:PROJECT_END), .funs = mdy) %>% 
+  arrange(contact_pi, BUDGET_START) %>% 
+  group_by(contact_pi) %>% 
+  mutate(R01_number = 1:n(),
+         R01_count = n()) %>% 
+  ungroup()
+```
+
+## Generic Summaries
+
+```{r pressure, echo=FALSE}
+r01_data %>% 
+  count(ADMINISTERING_IC, sort = T) %>% 
+  ggplot(aes(x = ADMINISTERING_IC, y = n)) + geom_bar(stat = "identity")
+```
+
+## Analyze by Study Section (GCAT)
+
+```{r pressure, echo=FALSE}
+r01_data %>% 
+  filter(STUDY_SECTION == "BMRD") %>% 
+  count(ADMINISTERING_IC, sort = T) %>% 
+  ggplot(aes(x = ADMINISTERING_IC, y = n)) + geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(STUDY_SECTION == "GCAT") %>% 
+  count(R01_count, sort = T) %>% 
+  ggplot(aes(x = R01_count, y = n)) + geom_bar(stat = "identity")
+```
+
+## Analyze by Institute (HG)
+
+```{r pressure, echo=FALSE}
+r01_data %>% 
+  filter(ADMINISTERING_IC == "HG") %>% 
+  count(STUDY_SECTION, sort = T) %>% 
+  ggplot(aes(x = STUDY_SECTION, y = n)) + 
+    geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(ADMINISTERING_IC == "HG") %>% 
+  count(R01_count, sort = T) %>% 
+  ggplot(aes(x = R01_count, y = n)) + 
+    geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(ADMINISTERING_IC == "HG") %>% 
+  count(R01_number, sort = T) %>% 
+  ggplot(aes(x = R01_number, y = n)) + geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(ADMINISTERING_IC == "HG",
+         R01_number == 1) %>% 
+  mutate_at(.vars = vars(contains("COST")), .funs = as.numeric) %>% 
+  mutate(start_year = as.numeric(year(PROJECT_START)),
+         end_year = as.numeric(year(PROJECT_END)),
+         R01_length = end_year - start_year) %>%
+  group_by(start_year) %>% 
+  summarise(n = n(), 
+            median_length = median(R01_length), mean_length = mean(R01_length), min_length = min(R01_length), max_length = max(R01_length),
+            median_directs = median(DIRECT_COST_AMT), mean_directs = mean(DIRECT_COST_AMT), min_directs = min(DIRECT_COST_AMT), max_directs = max(DIRECT_COST_AMT),
+            less_500 = sum(DIRECT_COST_AMT<500000), more_500 = sum(DIRECT_COST_AMT>=500000)) %>%
+  as.data.frame()
+```
+
+## Analyze by Study Section (BCHI) & Institute(HL)
+
+```{r pressure, echo=FALSE}
+r01_data %>% 
+  filter(STUDY_SECTION == "GCAT", ADMINISTERING_IC == "HG") %>% 
+  count(R01_count, sort = T) %>% 
+  ggplot(aes(x = R01_count, y = n)) + geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(STUDY_SECTION == "GCAT", ADMINISTERING_IC == "HG") %>% 
+  count(R01_number, sort = T) %>% 
+  ggplot(aes(x = R01_number, y = n)) + geom_bar(stat = "identity")
+
+r01_data %>% 
+  filter(STUDY_SECTION == "GCAT", 
+         ADMINISTERING_IC == "HG",
+         R01_number == 1) %>% 
+  mutate_at(.vars = vars(contains("COST")), .funs = as.numeric) %>%
+  filter(!is.na(DIRECT_COST_AMT)) %>% 
+  summarise(n = n(), median = median(DIRECT_COST_AMT), mean = mean(DIRECT_COST_AMT), min = min(DIRECT_COST_AMT), max = max(DIRECT_COST_AMT), less_500 = sum(DIRECT_COST_AMT<500000), more_500 = sum(DIRECT_COST_AMT>=500000))
+
+r01_data %>% 
+  filter(STUDY_SECTION == "GCAT", 
+         ADMINISTERING_IC == "HG",
+         R01_number == 1) %>% 
+  mutate_at(.vars = vars(contains("COST")), .funs = as.numeric) %>%
+  filter(!is.na(DIRECT_COST_AMT),
+         DIRECT_COST_AMT<500000) %>% 
+  summarise(n = n(), median = median(DIRECT_COST_AMT), mean = mean(DIRECT_COST_AMT), min = min(DIRECT_COST_AMT), max = max(DIRECT_COST_AMT), less_500 = sum(DIRECT_COST_AMT<500000), more_500 = sum(DIRECT_COST_AMT>=500000))
+
+r01_data %>% 
+  filter(STUDY_SECTION == "BCHI", 
+         ADMINISTERING_IC == "HL",
+         R01_number == 1) %>% 
+  mutate_at(.vars = vars(contains("COST")), .funs = as.numeric) %>% 
+  mutate(start_year = as.numeric(year(PROJECT_START)),
+         end_year = as.numeric(year(PROJECT_END)),
+         R01_length = end_year - start_year) %>%
+  group_by(start_year) %>% 
+  summarise(n = n(), 
+            median_length = median(R01_length), mean_length = mean(R01_length), min_length = min(R01_length), max_length = max(R01_length),
+            median_directs = median(DIRECT_COST_AMT), mean_directs = mean(DIRECT_COST_AMT), min_directs = min(DIRECT_COST_AMT), max_directs = max(DIRECT_COST_AMT),
+            less_500 = sum(DIRECT_COST_AMT<500000), more_500 = sum(DIRECT_COST_AMT>=500000))
+```
+
+
+```{r}
+r01_data %>% 
+  filter(STUDY_SECTION == "BCHI", 
+         ADMINISTERING_IC == "HL") %>%
+  select(FY, FOA_NUMBER, FULL_PROJECT_NUM, ORG_NAME, PI_NAMEs, R01_number, R01_count, PROJECT_TITLE, DIRECT_COST_AMT, PROGRAM_OFFICER_NAME) %>% 
+  datatable(options = list(scrollX = TRUE, scrollY = TRUE, paging = FALSE))
+
+r01_data %>% 
+  filter(PROGRAM_OFFICER_NAME %in% c("REDMOND, NICOLE", "HSU, LUCY L")) %>% 
+  select(FY, FOA_NUMBER, FULL_PROJECT_NUM, ADMINISTERING_IC, STUDY_SECTION, ORG_NAME, PI_NAMEs, R01_number, R01_count, PROJECT_TITLE, DIRECT_COST_AMT, PROGRAM_OFFICER_NAME) %>% View
+  datatable(options = list(scrollX = TRUE, scrollY = TRUE, paging = FALSE))
+```
+
+
