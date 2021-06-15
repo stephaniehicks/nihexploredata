@@ -1,7 +1,7 @@
 ---
-title: "Exporter Processing"
+title: "Analyze data"
 author: "Laura K Wiley and Stephanie Hicks"
-date: "7/21/2020"
+date: "6/14/2021"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -21,59 +21,15 @@ library(lubridate)
 library(DT)
 ```
 
-Create directories (if needed)
-```{r create-dirs}
-if(!dir.exists(here("data_raw"))){
-  dir.create(here("data_raw"))
-}
-if(!dir.exists(here("data_processed"))){
-  dir.create(here("data_processed"))
-}
+```{r read-data-in}
+reporter_data <- 
+    readRDS(file = here("data_processed", "nih_data.RDS"))
 ```
-
-```{r}
-# download GENCODE primary assembly fasta file
-if(!file.exists(here("data_raw", "nih_data.RDS"))){
-  
-  library(rvest)
-  url <- "https://exporter.nih.gov/ExPORTER_Catalog.aspx"
-  h <- read_html(url)
-  tmp <- h %>%
-    html_nodes("td:nth-child(5) div") %>% 
-    html_nodes("a") %>% 
-    html_attr("href")
-  zip_files <- paste0("https://exporter.nih.gov/", tmp)
-  rm(h,tmp, url)
-  
-  tmp <- read_csv(zip_files[1])
-  
-  download.file(zip_files[1], destfile = here("data_raw"))
-  csv_files <- list.files(here(), ".csv")
-```
-
-
-Things below this need to be edited.
-```{r}
-
-
-# files <- dir(recursive = T, pattern = ".csv")
-# reporter_data <- files %>% 
-#   map_dfr(read_csv, col_types = cols(.default = col_character()))
-# reporter_data %>% saveRDS("RePORTER_PRJ_FY_2015_2020.RDS")
-
-reporter_data <- readRDS(file = "RePORTER_PRJ_FY_2015_2020.RDS")
-
-write_csv(reporter_data, "nih.csv")
-```
-
-
-
-
 
 ```{r}
 table(reporter_data$ACTIVITY)
 reporter_data %>% 
-  filter(ACTIVITY == "K99")
+  filter(ACTIVITY == "R01")
 ```
 
 
